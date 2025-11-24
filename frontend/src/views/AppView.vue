@@ -1,11 +1,16 @@
 <script setup>
+// Core Vue APIs
 import { ref, onMounted } from "vue";
+
+// UI components
 import ChatMessages from "../components/ChatMessages.vue";
 import ChatInput from "../components/ChatInput.vue";
 import AvatarCanvas from "../components/AvatarCanvas.vue";
 
+// Backend health status (ok / error / checking)
 const backendStatus = ref("checking");
 
+// Conversation history shown in chat
 const messages = ref([
   {
     role: "assistant",
@@ -13,6 +18,11 @@ const messages = ref([
   },
 ]);
 
+// Flags for async state
+const isSending = ref(false);   // true while waiting for backend reply
+const isSpeaking = ref(false);  // true while TTS is speaking
+
+// Ping backend /health to check server status
 const checkBackend = async () => {
   backendStatus.value = "checking";
   try {
@@ -23,11 +33,45 @@ const checkBackend = async () => {
   }
 };
 
+// Simple browser TTS wrapper (no external API)
+const speak = (text) => {
+  // Guard for unsupported browsers
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+    console.warn("speechSynthesis not supported in this browser.");
+    return;
+  }
+
+  // Stop any previous speech
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+
+  // Update speaking flag for UI + avatar animation
+  utterance.onstart = () => {
+    isSpeaking.value = true;
+  };
+
+  utterance.onend = () => {
+    isSpeaking.value = false;
+  };
+
+  utterance.onerror = () => {
+    isSpeaking.value = false;
+  };
+
+  window.speechSynthesis.speak(utterance);
+};
+
+// Handle user sending a new chat message
 const handleSendMessage = async (text) => {
+  if (isSending.value) return; // prevent double-send
+
   const userMsg = { role: "user", content: text };
   messages.value.push(userMsg);
+  isSending.value = true;
 
   try {
+    // Call backend /chat endpoint with full message history
     const res = await fetch("http://localhost:3000/chat", {
       method: "POST",
       headers: {
@@ -43,27 +87,41 @@ const handleSendMessage = async (text) => {
     }
 
     const data = await res.json();
+    const replyText = data.reply ?? "[no reply from backend]";
+
+    const assistantMsg = {
+      role: "assistant",
+      content: replyText,
+    };
+
+    // Show assistant reply in UI
+    messages.value.push(assistantMsg);
+
+    // Speak the reply using browser TTS
+    speak(replyText);
+  } catch (err) {
+    console.error(err);
+
+    const fallback = "Oops, something went wrong talking to the backend.";
 
     messages.value.push({
       role: "assistant",
-      content: data.reply ?? "[no reply from backend]",
+      content: fallback,
     });
-  } catch (err) {
-    console.error(err);
-    messages.value.push({
-      role: "assistant",
-      content: "Oops, something went wrong talking to the backend.",
-    });
+
+    speak(fallback);
+  } finally {
+    isSending.value = false;
   }
 };
 
-
+// Run backend health check when view is mounted
 onMounted(checkBackend);
 </script>
 
-
 <template>
   <div class="app-page">
+    <!-- Top bar: title + backend status -->
     <header class="app-header">
       <div class="logo">
         <span class="dot" />
@@ -79,24 +137,37 @@ onMounted(checkBackend);
     </header>
 
     <main class="app-main">
-      <!-- LEFT: avatar placeholder -->
+      <!-- LEFT: 3D avatar area -->
       <section class="avatar-panel">
         <div class="avatar-wrapper">
-          <AvatarCanvas />
+          <!-- talking prop drives cube animation -->
+          <AvatarCanvas :talking="isSpeaking" />
           <div class="avatar-caption">
             <h2>Persona Avatar</h2>
-            <p>Level 1: simple 3D placeholder. Later: full character.</p>
+            <p>Level 2: simple talking animation driven by TTS.</p>
           </div>
         </div>
       </section>
 
-
       <!-- RIGHT: chat panel -->
       <section class="chat-panel">
-        <div class="chat-header">Chat</div>
+        <div class="chat-header">
+          Chat
+          <!-- Show thinking/speaking state next to title -->
+          <span v-if="isSending" class="typing-indicator">
+            Persona is thinking…
+          </span>
+          <span v-else-if="isSpeaking" class="typing-indicator">
+            Persona is speaking…
+          </span>
+        </div>
+
         <div class="chat-messages">
+          <!-- Message list (user + assistant bubbles) -->
           <ChatMessages :messages="messages" />
         </div>
+
+        <!-- Input box + send button -->
         <ChatInput @send="handleSendMessage" />
       </section>
     </main>
@@ -104,12 +175,21 @@ onMounted(checkBackend);
 </template>
 
 <style scoped>
+/* Small status text beside "Chat" */
+.typing-indicator {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+/* Page layout */
 .app-page {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
+/* Top header bar */
 .app-header {
   display: flex;
   justify-content: space-between;
@@ -119,6 +199,7 @@ onMounted(checkBackend);
   background: rgba(3, 7, 18, 0.9);
 }
 
+/* Logo / title styling */
 .logo {
   display: flex;
   align-items: center;
@@ -133,6 +214,7 @@ onMounted(checkBackend);
   background: #4f46e5;
 }
 
+/* Backend status area */
 .status {
   display: flex;
   align-items: center;
@@ -140,6 +222,7 @@ onMounted(checkBackend);
   font-size: 0.9rem;
 }
 
+/* Small pill-style button */
 .small-btn {
   padding: 0.3rem 0.7rem;
   border-radius: 999px;
@@ -150,6 +233,7 @@ onMounted(checkBackend);
   color: white;
 }
 
+/* Main two-column layout */
 .app-main {
   flex: 1;
   display: grid;
@@ -158,11 +242,13 @@ onMounted(checkBackend);
   min-height: 0;
 }
 
+/* Shared padding for both panels */
 .avatar-panel,
 .chat-panel {
   padding: 1rem;
 }
 
+/* Left: avatar panel layout */
 .avatar-panel {
   border-right: 1px solid #111827;
   display: flex;
@@ -189,6 +275,7 @@ onMounted(checkBackend);
   opacity: 0.7;
 }
 
+/* Right: chat panel layout */
 .chat-panel {
   display: flex;
   flex-direction: column;
@@ -199,6 +286,7 @@ onMounted(checkBackend);
   margin-bottom: 0.75rem;
 }
 
+/* Scrollable message area */
 .chat-messages {
   flex: 1;
   border-radius: 0.75rem;

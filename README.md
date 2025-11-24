@@ -60,3 +60,5 @@ We have completed **Level 0** and **Level 1 (Part 1 + 2)**. The system now featu
 
 ```json
 { "reply": "You said: \"hello\". (Dummy backend reply for now)" }
+
+// How to use: Run both frontend and backend folders with npm run dev, do backend first since they need fetching the data

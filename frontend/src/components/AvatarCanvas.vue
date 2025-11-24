@@ -2,6 +2,13 @@
 import { onMounted, onBeforeUnmount, ref } from "vue";
 import * as THREE from "three";
 
+const props = defineProps({
+  talking: {
+    type: Boolean,
+    default: false,
+  },
+});
+
 const container = ref(null);
 
 let renderer;
@@ -33,7 +40,9 @@ const initScene = () => {
     roughness: 0.6,
   });
   const avatar = new THREE.Mesh(geometry, material);
+  avatar.position.y = -0.1;
   scene.add(avatar);
+
 
   // ground
   const groundGeo = new THREE.CircleGeometry(3, 64);
@@ -57,7 +66,16 @@ const initScene = () => {
   const animate = () => {
     animationId = requestAnimationFrame(animate);
 
+    // idle rotation
     avatar.rotation.y += 0.01;
+
+    // simple "talking" bob
+    if (props.talking) {
+      const t = performance.now() / 200;
+      avatar.position.y = -0.1 + Math.sin(t) * 0.05;
+    } else {
+      avatar.position.y = -0.1;
+    }
 
     renderer.render(scene, camera);
   };
