@@ -11,12 +11,13 @@ import AvatarCanvas from "../components/AvatarCanvas.vue";
 const backendStatus = ref("checking");
 
 // Conversation history shown in chat
-const messages = ref([
-  {
-    role: "assistant",
-    content: "Hi, I'm your Persona3D prototype. Say hi!",
-  },
-]);
+const messages = ref([]);
+
+const defaultGreeting = {
+  role: "assistant",
+  content: "Hi, I'm your Persona3D prototype. Say hi!",
+};
+
 
 // Flags for async state
 const isSending = ref(false);   // true while waiting for backend reply
@@ -32,6 +33,32 @@ const checkBackend = async () => {
     backendStatus.value = "error";
   }
 };
+
+const loadHistory = async () => {
+  try {
+    // Ask backend for recent messages from default conversation
+    const res = await fetch("http://localhost:3000/history");
+    if (!res.ok) throw new Error("Failed to load history");
+    const data = await res.json();
+
+    if (Array.isArray(data.messages) && data.messages.length > 0) {
+      // We have stored messages → use them
+      messages.value = data.messages.map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      }));
+    } else {
+      // No history yet → start with default greeting
+      messages.value = [defaultGreeting];
+    }
+  } catch (e) {
+    console.error("History load failed:", e);
+    // On error, still show something friendly
+    messages.value = [defaultGreeting];
+  }
+};
+
+
 
 // Simple browser TTS wrapper (no external API)
 const speak = (text) => {
@@ -116,7 +143,11 @@ const handleSendMessage = async (text) => {
 };
 
 // Run backend health check when view is mounted
-onMounted(checkBackend);
+onMounted(() => {
+  checkBackend();
+  loadHistory();
+});
+
 </script>
 
 <template>
